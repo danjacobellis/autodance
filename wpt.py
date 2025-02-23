@@ -1,10 +1,8 @@
-I'm attempting to extend the 1d and 2d transforms to 3d.
-
-wpt.ipynb
-
-```
-# In[1]:
-
+# Modified from github.com/fbcotter/pytorch_wavelets/blob/master/pytorch_wavelets/dwt/lowlevel.py
+# Changes:
+# Removed all modes other than periodic
+# Added Support for 3D transforms
+# Added 1D, 2D, and 3D wavelet packet transform
 
 import torch
 import torch.nn as nn
@@ -14,31 +12,25 @@ import pywt
 import einops
 from torch.autograd import Function
 
-
-# In[2]:
-
-
 def roll(x, n, dim, make_even=False):
     if n < 0:
         n = x.shape[dim] + n
-
     if make_even and x.shape[dim] % 2 == 1:
         end = 1
     else:
         end = 0
-
     if dim == 0:
         return torch.cat((x[-n:], x[:-n+end]), dim=0)
     elif dim == 1:
         return torch.cat((x[:,-n:], x[:,:-n+end]), dim=1)
-    elif dim == 2 or dim == -2:
+    elif dim == 2:
         return torch.cat((x[:,:,-n:], x[:,:,:-n+end]), dim=2)
-    elif dim == 3 or dim == -1:
+    elif dim == 3:
         return torch.cat((x[:,:,:,-n:], x[:,:,:,:-n+end]), dim=3)
-
-
-# In[3]:
-
+    elif dim == 4:
+        return torch.cat((x[:,:,:,:,-n:], x[:,:,:,:,:-n+end]), dim=4)
+    else:
+        raise ValueError("Dimension out of range")
 
 def prep_filt_afb1d(h0, h1, device=None):
     h0 = np.array(h0[::-1]).ravel()
@@ -222,6 +214,20 @@ class DWT1DForward(nn.Module):
         return x0, highs
         
 class WPT1D(torch.nn.Module):
+    """
+    example usage:
+    import torch
+    from tft.wavelet import DWT1DForward, DWT1DInverse, WPT1D, IWPT1D
+    x1d = torch.randn(2, 3, 4096)
+    wt1d = DWT1DForward(wave='bior4.4')
+    wpt1d = WPT1D(wt=wt1d, J=3)
+    iwt1d = DWT1DInverse(wave='bior4.4')
+    iwpt1d = IWPT1D(iwt=iwt1d, J=3)
+    with torch.no_grad():
+        X1d = wpt1d(x1d)
+        xhat1d = iwpt1d(X1d)
+    assert (xhat1d - x1d).abs().max() < 1e-5
+    """
     def __init__(self, wt=DWT1DForward(wave='bior4.4'), J=4):
         super().__init__()
         self.wt = wt
@@ -287,24 +293,6 @@ class IWPT1D(torch.nn.Module):
 
     def forward(self, x):
         return self.wavelet_synthesis(x, J=self.J)
-
-
-# In[4]:
-
-
-x1d = torch.randn(2, 3, 4096)
-wt1d = DWT1DForward(wave='bior4.4')
-wpt1d = WPT1D(wt=wt1d, J=3)
-iwt1d = DWT1DInverse(wave='bior4.4')
-iwpt1d = IWPT1D(iwt=iwt1d, J=3)
-with torch.no_grad():
-    X1d = wpt1d(x1d)
-    xhat1d = iwpt1d(X1d)
-assert (xhat1d - x1d).abs().max() < 1e-5
-
-
-# In[5]:
-
 
 def prep_filt_afb2d(h0_col, h1_col, h0_row=None, h1_row=None, device=None):
     h0_col, h1_col = prep_filt_afb1d(h0_col, h1_col, device)
@@ -470,6 +458,19 @@ class DWT2DForward(nn.Module):
         return ll, yh
 
 class WPT2D(torch.nn.Module):
+    """
+    import torch
+    from tft.wavelet import DWT2DForward, DWT2DInverse, WPT2D, IWPT2D
+    x2d = torch.randn(2, 3, 64, 64)
+    wt2d = DWT2DForward(wave='bior4.4')
+    wpt2d = WPT2D(wt=wt2d, J=3)
+    iwt2d = DWT2DInverse(wave='bior4.4')
+    iwpt2d = IWPT2D(iwt=iwt2d, J=3)
+    with torch.no_grad():
+        X2d = wpt2d(x2d)
+        xhat2d = iwpt2d(X2d)
+    assert (xhat2d - x2d).abs().max() < 1e-5
+    """
     def __init__(self, wt=DWT2DForward(wave='bior4.4'), J=4):
         super().__init__()
         self.wt  = wt
@@ -539,72 +540,6 @@ class IWPT2D(torch.nn.Module):
     def forward(self, x):
         return self.wavelet_synthesis(x,J=self.J)
 
-
-# In[6]:
-
-
-x2d = torch.randn(2, 3, 64, 64)
-wt2d = DWT2DForward(wave='bior4.4')
-wpt2d = WPT2D(wt=wt2d, J=3)
-iwt2d = DWT2DInverse(wave='bior4.4')
-iwpt2d = IWPT2D(iwt=iwt2d, J=3)
-with torch.no_grad():
-    X2d = wpt2d(x2d)
-    xhat2d = iwpt2d(X2d)
-assert (xhat2d - x2d).abs().max() < 1e-5
-
-
-# In[7]:
-
-
-x2d = torch.ones(1, 1, 2, 2)
-wt2d = DWT2DForward(wave='haar')
-wpt2d = WPT2D(wt=wt2d, J=1)
-iwt2d = DWT2DInverse(wave='haar')
-iwpt2d = IWPT2D(iwt=iwt2d, J=1)
-with torch.no_grad():
-    X2d = wpt2d(x2d)
-    xhat2d = iwpt2d(X2d)
-assert (xhat2d - x2d).abs().max() < 1e-5
-
-print(x2d)
-print(X2d)
-print(xhat2d)
-
-tensor([[[[1., 1.],
-          [1., 1.]]]])
-tensor([[[[2.0000]],
-
-         [[0.0000]],
-
-         [[0.0000]],
-
-         [[0.0000]]]])
-tensor([[[[1.0000, 1.0000],
-          [1.0000, 1.0000]]]]).0000]]]])
-# In[8]:
-
-
-def roll(x, n, dim, make_even=False):
-    if n < 0:
-        n = x.shape[dim] + n
-    if make_even and x.shape[dim] % 2 == 1:
-        end = 1
-    else:
-        end = 0
-    if dim == 0:
-        return torch.cat((x[-n:], x[:-n+end]), dim=0)
-    elif dim == 1:
-        return torch.cat((x[:,-n:], x[:,:-n+end]), dim=1)
-    elif dim == 2:
-        return torch.cat((x[:,:,-n:], x[:,:,:-n+end]), dim=2)
-    elif dim == 3:
-        return torch.cat((x[:,:,:,-n:], x[:,:,:,:-n+end]), dim=3)
-    elif dim == 4:
-        return torch.cat((x[:,:,:,:,-n:], x[:,:,:,:,:-n+end]), dim=4)
-    else:
-        raise ValueError("Dimension out of range")
-
 def prep_filt_afb3d(h0_d, h1_d, h0_h=None, h1_h=None, h0_w=None, h1_w=None, device=None):
     # Prepare depth filters
     h0_d, h1_d = prep_filt_afb1d(h0_d, h1_d, device)
@@ -634,70 +569,57 @@ def afb1d_3d(x, h0, h1, dim=-1):
     
     C = x.shape[1]
     N = x.shape[dim]
-    L = h0.numel()  # Filter length
+    L = h0.numel()
     L2 = L // 2
     
-    # Set stride and padding based on dimension
-    if dim == 4:      # Width
-        stride = (1, 1, 2)
-        pad = (L-1, 0, 0, 0, 0, 0)
-    elif dim == 3:    # Height
-        stride = (1, 2, 1)
-        pad = (0, 0, L-1, 0, 0, 0)
-    elif dim == 2:    # Depth
+    # Prepare filter shapes based on dimension
+    if dim == 2:  # Depth
+        h0 = h0.view(1, 1, L, 1, 1)
+        h1 = h1.view(1, 1, L, 1, 1)
+        padding = (L-1, 0, 0)  # padD, padH, padW
         stride = (2, 1, 1)
-        pad = (0, 0, 0, 0, L-1, 0)
+    elif dim == 3:  # Height
+        h0 = h0.view(1, 1, 1, L, 1)
+        h1 = h1.view(1, 1, 1, L, 1)
+        padding = (0, L-1, 0)
+        stride = (1, 2, 1)
+    elif dim == 4:  # Width
+        h0 = h0.view(1, 1, 1, 1, L)
+        h1 = h1.view(1, 1, 1, 1, L)
+        padding = (0, 0, L-1)
+        stride = (1, 1, 2)
     
-    h = torch.cat([h0, h1] * C, dim=0)
-    print(f"afb1d_3d dim={dim}, Input shape: {x.shape}, Filters: h0={h0.flatten()}, h1={h1.flatten()}")
-    print(f"Input x:\n{x}")
+    # Stack filters for each channel
+    h = torch.cat([h0, h1] * C, dim=0)  # Shape: (2*C, 1, kernel_D, kernel_H, kernel_W)
     
-    # Pad odd-length inputs
+    # Pad to handle odd lengths
     if N % 2 == 1:
-        idx = [slice(None)] * 5
-        idx[dim] = slice(-1, None)
-        pad_amount = [0] * 6
-        pad_amount[(4 - dim) * 2] = 1  # Pad after the dimension
-        x = F.pad(x, pad_amount, mode='replicate')
+        if dim == 2:
+            x = torch.cat((x, x[:, :, -1:, :, :]), dim=2)
+        elif dim == 3:
+            x = torch.cat((x, x[:, :, :, -1:, :]), dim=3)
+        elif dim == 4:
+            x = torch.cat((x, x[:, :, :, :, -1:]), dim=4)
         N += 1
-        print(f"After odd-length padding, shape: {x.shape}")
-        print(f"x after odd padding:\n{x}")
     
-    # Apply circular shift and padding
-    x = roll(x, -L2, dim=dim)
-    print(f"After roll by {-L2} along dim {dim}, shape: {x.shape}")
-    print(f"x after roll:\n{x}")
+    # Roll the input to align with filter
+    x = torch.roll(x, -L2, dims=dim)
     
-    x = F.pad(x, pad, mode='constant', value=0)
-    print(f"After zero-padding with pad={pad}, shape: {x.shape}")
-    print(f"x after padding:\n{x}")
+    # Apply 3D convolution with asymmetric padding
+    lohi = F.conv3d(x, h, stride=stride, padding=padding, groups=C)
     
-    lohi = F.conv3d(x, h, stride=stride, groups=C)
-    print(f"After convolution with stride={stride}, shape: {lohi.shape}")
-    print(f"lohi after conv3d:\n{lohi}")
-    
-    # Handle overlapping addition only if output size exceeds N2
+    # Handle overlap if output is larger than N//2
     N2 = N // 2
     if lohi.shape[dim] > N2:
-        idx = [slice(None)] * lohi.ndim
-        idx[dim] = slice(None, L2)
-        idx2 = [slice(None)] * lohi.ndim
-        idx2[dim] = slice(N2, min(N2 + L2, lohi.shape[dim]))
-        print(f"Overlapping addition - lohi shape: {lohi.shape}, N2={N2}, L2={L2}")
-        print(f"Adding lohi[{idx}]:\n{lohi[tuple(idx)]}")
-        print(f"to lohi[{idx2}]:\n{lohi[tuple(idx2)]}")
-        if idx2[dim].start < idx2[dim].stop:
-            lohi_clone = lohi.clone()
-            lohi_clone[tuple(idx)] = lohi[tuple(idx)] + lohi[tuple(idx2)]
-            lohi = lohi_clone
-            print(f"After overlapping addition, lohi[{idx}]:\n{lohi[tuple(idx)]}")
-        # Slice to N2 if larger
-        idx[dim] = slice(None, N2)
-        lohi = lohi[tuple(idx)]
-        print(f"After slicing to N2, shape: {lohi.shape}")
-        print(f"lohi after slicing:\n{lohi}")
-    else:
-        print(f"No overlapping addition needed, lohi shape: {lohi.shape} <= N2={N2}")
+        if dim == 2:
+            lohi[:, :, :L2, :, :] += lohi[:, :, N2:N2+L2, :, :]
+            lohi = lohi[:, :, :N2, :, :]
+        elif dim == 3:
+            lohi[:, :, :, :L2, :] += lohi[:, :, :, N2:N2+L2, :]
+            lohi = lohi[:, :, :, :N2, :]
+        elif dim == 4:
+            lohi[:, :, :, :, :L2] += lohi[:, :, :, :, N2:N2+L2]
+            lohi = lohi[:, :, :, :, :N2]
     
     return lohi
 
@@ -722,21 +644,10 @@ def afb3d(x, filts):
     else:
         raise ValueError("filts must be length 2 or 6")
     
-    print(f"afb3d Input shape: {x.shape}")
-    print(f"Input x:\n{x}")
-    
     # Apply decomposition sequentially
     lohi_w = afb1d_3d(x, h0_w, h1_w, dim=4)      # (N, 2*C, D, H, W/2)
-    print(f"After afb1d_3d along width (dim=4), shape: {lohi_w.shape}")
-    print(f"lohi_w:\n{lohi_w}")
-    
     lohi_hw = afb1d_3d(lohi_w, h0_h, h1_h, dim=3) # (N, 4*C, D, H/2, W/2)
-    print(f"After afb1d_3d along height (dim=3), shape: {lohi_hw.shape}")
-    print(f"lohi_hw:\n{lohi_hw}")
-    
     y = afb1d_3d(lohi_hw, h0_d, h1_d, dim=2)     # (N, 8*C, D/2, H/2, W/2)
-    print(f"After afb1d_3d along depth (dim=2), shape: {y.shape}")
-    print(f"y:\n{y}")
     
     return y
 
@@ -785,6 +696,19 @@ class DWT3DForward(nn.Module):
 
 
 class WPT3D(nn.Module):
+    """
+    import torch
+    from tft.wavelet import DWT3DForward, DWT3DInverse, WPT3D, IWPT3D
+    x3d = torch.randn(2, 3, 16, 16, 16)
+    wt3d = DWT3DForward(wave='bior4.4')
+    wpt3d = WPT3D(wt=wt3d,J=1)
+    iwt3d = DWT3DInverse(wave='bior4.4')
+    iwpt3d = IWPT3D(iwt=iwt3d, J=1)
+    with torch.no_grad():
+        X3d = wpt3d(x3d)
+        xhat3d = iwpt3d(X3d)
+    assert (xhat3d - x3d).abs().max() < 1e-5
+    """
     def __init__(self, wt=None, J=4, wave='db1'):
         super().__init__()
         self.J = J
@@ -806,17 +730,6 @@ class WPT3D(nn.Module):
         return x
 
 def sfb1d_3d(lo, hi, g0, g1, dim=-1):
-    """
-    1D Synthesis Filter Bank along a specified dimension in 3D.
-    Args:
-        lo (Tensor): Low-pass subband (N, C, D, H, W)
-        hi (Tensor): High-pass subband (N, C, D, H, W)
-        g0 (Tensor): Low-pass synthesis filter
-        g1 (Tensor): High-pass synthesis filter
-        dim (int): Dimension to apply transform (2: depth, 3: height, 4: width)
-    Returns:
-        Tensor: Reconstructed signal (N, C, D', H', W')
-    """
     assert lo.ndim == 5 and hi.ndim == 5, "Inputs must be 5D (N, C, D, H, W)"
     assert lo.shape == hi.shape, "Low and high subbands must have the same shape"
     assert dim in [2, 3, 4], "dim must be 2 (D), 3 (H), or 4 (W)"
@@ -872,14 +785,6 @@ def sfb1d_3d(lo, hi, g0, g1, dim=-1):
     return y
 
 def sfb3d(y, filts):
-    """
-    3D Synthesis Filter Bank.
-    Args:
-        y (Tensor): Concatenated subbands (N, 8*C, D/2, H/2, W/2)
-        filts (tuple): (g0_d, g1_d, g0_h, g1_h, g0_w, g1_w) synthesis filters
-    Returns:
-        Tensor: Reconstructed signal (N, C, D, H, W)
-    """
     assert y.ndim == 5 and y.shape[1] % 8 == 0, "Input must be (N, 8*C, D/2, H/2, W/2)"
     C = y.shape[1] // 8
     g0_d, g1_d, g0_h, g1_h, g0_w, g1_w = filts
@@ -940,13 +845,6 @@ class DWT3DInverse(nn.Module):
         self.register_buffer('g1_w', torch.tensor(g1_w, dtype=torch.float).reshape(1, 1, 1, 1, -1))
 
     def forward(self, coeffs):
-        """
-        Args:
-            coeffs (tuple): (yl, yh) where yl is (N, C, D/2, H/2, W/2) and
-                           yh is a list with high subbands (N, 7*C, D/2, H/2, W/2)
-        Returns:
-            Tensor: Reconstructed signal (N, C, D, H, W)
-        """
         yl, yh = coeffs
         ll = yl
 
@@ -989,286 +887,3 @@ class IWPT3D(nn.Module):
 
     def forward(self, x):
         return self.wavelet_synthesis(x, self.J)
-
-
-# In[9]:
-
-
-x3d = torch.ones(1, 1, 2, 2, 2)
-wt3d = DWT3DForward(wave='haar')
-wpt3d = WPT3D(J=1)
-iwt3d = DWT3DInverse(wave='haar')
-iwpt3d = IWPT3D(iwt=iwt3d, J=1)
-with torch.no_grad():
-    X3d = wpt3d(x3d)
-    xhat3d = iwpt3d(X3d)
-assert (xhat3d - x3d).abs().max() < 1e-5
-
-afb3d Input shape: torch.Size([1, 1, 2, 2, 2])
-Input x:
-tensor([[[[[1., 1.],
-           [1., 1.]],
-
-          [[1., 1.],
-           [1., 1.]]]]])
-afb1d_3d dim=4, Input shape: torch.Size([1, 1, 2, 2, 2]), Filters: h0=tensor([0.7071, 0.7071]), h1=tensor([ 0.7071, -0.7071])
-Input x:
-tensor([[[[[1., 1.],
-           [1., 1.]],
-
-          [[1., 1.],
-           [1., 1.]]]]])
-After roll by -1 along dim 4, shape: torch.Size([1, 1, 2, 2, 2])
-x after roll:
-tensor([[[[[1., 1.],
-           [1., 1.]],
-
-          [[1., 1.],
-           [1., 1.]]]]])
-After zero-padding with pad=(1, 0, 0, 0, 0, 0), shape: torch.Size([1, 1, 2, 2, 3])
-x after padding:
-tensor([[[[[0., 1., 1.],
-           [0., 1., 1.]],
-
-          [[0., 1., 1.],
-           [0., 1., 1.]]]]])
-After convolution with stride=(1, 1, 2), shape: torch.Size([1, 2, 2, 2, 1])
-lohi after conv3d:
-tensor([[[[[ 0.7071],
-           [ 0.7071]],
-
-          [[ 0.7071],
-           [ 0.7071]]],
-
-
-         [[[-0.7071],
-           [-0.7071]],
-
-          [[-0.7071],
-           [-0.7071]]]]])
-No overlapping addition needed, lohi shape: torch.Size([1, 2, 2, 2, 1]) <= N2=1
-After afb1d_3d along width (dim=4), shape: torch.Size([1, 2, 2, 2, 1])
-lohi_w:
-tensor([[[[[ 0.7071],
-           [ 0.7071]],
-
-          [[ 0.7071],
-           [ 0.7071]]],
-
-
-         [[[-0.7071],
-           [-0.7071]],
-
-          [[-0.7071],
-           [-0.7071]]]]])
-afb1d_3d dim=3, Input shape: torch.Size([1, 2, 2, 2, 1]), Filters: h0=tensor([0.7071, 0.7071]), h1=tensor([ 0.7071, -0.7071])
-Input x:
-tensor([[[[[ 0.7071],
-           [ 0.7071]],
-
-          [[ 0.7071],
-           [ 0.7071]]],
-
-
-         [[[-0.7071],
-           [-0.7071]],
-
-          [[-0.7071],
-           [-0.7071]]]]])
-After roll by -1 along dim 3, shape: torch.Size([1, 2, 2, 2, 1])
-x after roll:
-tensor([[[[[ 0.7071],
-           [ 0.7071]],
-
-          [[ 0.7071],
-           [ 0.7071]]],
-
-
-         [[[-0.7071],
-           [-0.7071]],
-
-          [[-0.7071],
-           [-0.7071]]]]])
-After zero-padding with pad=(0, 0, 1, 0, 0, 0), shape: torch.Size([1, 2, 2, 3, 1])
-x after padding:
-tensor([[[[[ 0.0000],
-           [ 0.7071],
-           [ 0.7071]],
-
-          [[ 0.0000],
-           [ 0.7071],
-           [ 0.7071]]],
-
-
-         [[[ 0.0000],
-           [-0.7071],
-           [-0.7071]],
-
-          [[ 0.0000],
-           [-0.7071],
-           [-0.7071]]]]])
-After convolution with stride=(1, 2, 1), shape: torch.Size([1, 4, 2, 1, 1])
-lohi after conv3d:
-tensor([[[[[ 0.5000]],
-
-          [[ 0.5000]]],
-
-
-         [[[-0.5000]],
-
-          [[-0.5000]]],
-
-
-         [[[-0.5000]],
-
-          [[-0.5000]]],
-
-
-         [[[ 0.5000]],
-
-          [[ 0.5000]]]]])
-No overlapping addition needed, lohi shape: torch.Size([1, 4, 2, 1, 1]) <= N2=1
-After afb1d_3d along height (dim=3), shape: torch.Size([1, 4, 2, 1, 1])
-lohi_hw:
-tensor([[[[[ 0.5000]],
-
-          [[ 0.5000]]],
-
-
-         [[[-0.5000]],
-
-          [[-0.5000]]],
-
-
-         [[[-0.5000]],
-
-          [[-0.5000]]],
-
-
-         [[[ 0.5000]],
-
-          [[ 0.5000]]]]])
-afb1d_3d dim=2, Input shape: torch.Size([1, 4, 2, 1, 1]), Filters: h0=tensor([0.7071, 0.7071]), h1=tensor([ 0.7071, -0.7071])
-Input x:
-tensor([[[[[ 0.5000]],
-
-          [[ 0.5000]]],
-
-
-         [[[-0.5000]],
-
-          [[-0.5000]]],
-
-
-         [[[-0.5000]],
-
-          [[-0.5000]]],
-
-
-         [[[ 0.5000]],
-
-          [[ 0.5000]]]]])
-After roll by -1 along dim 2, shape: torch.Size([1, 4, 2, 1, 1])
-x after roll:
-tensor([[[[[ 0.5000]],
-
-          [[ 0.5000]]],
-
-
-         [[[-0.5000]],
-
-          [[-0.5000]]],
-
-
-         [[[-0.5000]],
-
-          [[-0.5000]]],
-
-
-         [[[ 0.5000]],
-
-          [[ 0.5000]]]]])
-After zero-padding with pad=(0, 0, 0, 0, 1, 0), shape: torch.Size([1, 4, 3, 1, 1])
-x after padding:
-tensor([[[[[ 0.0000]],
-
-          [[ 0.5000]],
-
-          [[ 0.5000]]],
-
-
-         [[[ 0.0000]],
-
-          [[-0.5000]],
-
-          [[-0.5000]]],
-
-
-         [[[ 0.0000]],
-
-          [[-0.5000]],
-
-          [[-0.5000]]],
-
-
-         [[[ 0.0000]],
-
-          [[ 0.5000]],
-
-          [[ 0.5000]]]]])
-After convolution with stride=(2, 1, 1), shape: torch.Size([1, 8, 1, 1, 1])
-lohi after conv3d:
-tensor([[[[[ 0.3536]]],
-
-
-         [[[-0.3536]]],
-
-
-         [[[-0.3536]]],
-
-
-         [[[ 0.3536]]],
-
-
-         [[[-0.3536]]],
-
-
-         [[[ 0.3536]]],
-
-
-         [[[ 0.3536]]],
-
-
-         [[[-0.3536]]]]])
-No overlapping addition needed, lohi shape: torch.Size([1, 8, 1, 1, 1]) <= N2=1
-After afb1d_3d along depth (dim=2), shape: torch.Size([1, 8, 1, 1, 1])
-y:
-tensor([[[[[ 0.3536]]],
-
-
-         [[[-0.3536]]],
-
-
-         [[[-0.3536]]],
-
-
-         [[[ 0.3536]]],
-
-
-         [[[-0.3536]]],
-
-
-         [[[ 0.3536]]],
-
-
-         [[[ 0.3536]]],
-
-
-         [[[-0.3536]]]]])
-```
----------------------------------------------------------------------------
-AssertionError                            Traceback (most recent call last)
-Cell In[9], line 9
-      7     X3d = wpt3d(x3d)
-      8     xhat3d = iwpt3d(X3d)
-----> 9 assert (xhat3d - x3d).abs().max() < 1e-5
