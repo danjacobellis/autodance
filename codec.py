@@ -31,6 +31,8 @@ class QuantizeLF8(nn.Module):
         x = self.compand(x)
         if self.training:
             x += torch.rand_like(x) - 0.5
+        else:
+            x = x.round()
         return x
 
 class AutoEncoderND(nn.Module):
