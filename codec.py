@@ -8,6 +8,7 @@ from monarch import FactorizedConvND, FactorizedResBlockGNND
 from tft.utils import compand, decompand
 from torchvision.transforms.v2.functional import pil_to_tensor, to_pil_image
 from torch.distributions.laplace import Laplace
+from einops import rearrange
 
 class LaplaceCompand(nn.Module):
     def __init__(self, num_channels):
@@ -111,3 +112,62 @@ class AutoEncoderND(nn.Module):
         x = self.quantize(x)
         x = self.decode(x)
         return x, rate
+        
+def to_bytes(x, n_bits):
+    max_value = 2**(n_bits - 1) - 1
+    min_value = -max_value - 1
+    if x.min() < min_value or x.max() > max_value:
+        raise ValueError(f"Tensor values should be in the range [{min_value}, {max_value}].")
+    return (x + (max_value + 1)).to(torch.uint8)
+
+def from_bytes(x, n_bits):
+    max_value = 2**(n_bits - 1) - 1
+    return (x.to(torch.float32) - (max_value + 1))
+
+def concatenate_channels(x, C):
+    batch_size, N, h, w = x.shape
+    if N % C != 0 or int((N // C)**0.5) ** 2 * C != N:
+        raise ValueError(f"Number of channels must satisfy N = {C} * (n^2) for some integer n.")
+    
+    n = int((N // C)**0.5)
+    x = rearrange(x, 'b (c nh nw) h w -> b (nh h) (nw w) c', c=C, nh=n, nw=n)
+    return x
+
+def split_channels(x, N, C):
+    batch_size, _, H, W = x.shape
+    n = int((N // C)**0.5)
+    h = H // n
+    w = W // n
+    
+    x = rearrange(x, 'b c (nh h) (nw w) -> b (c nh nw) h w', c=C, nh=n, nw=n)
+    return x
+
+def latent_to_pil(latent, n_bits, C):
+    latent_bytes = to_bytes(latent, n_bits)
+    concatenated_latent = concatenate_channels(latent_bytes, C)
+    
+    if C == 1:
+        mode = 'L'
+        concatenated_latent = concatenated_latent.squeeze(-1)
+    elif C == 3:
+        mode = 'RGB'
+    elif C == 4:
+        mode = 'CMYK'
+    else:
+        raise ValueError(
+            f"Unsupported number of channels C={C}. Supported values are 1 (L), 3 (RGB), and 4 (CMYK)"
+        )
+    
+    pil_images = []
+    for i in range(concatenated_latent.shape[0]):
+        pil_image = PIL.Image.fromarray(concatenated_latent[i].numpy(), mode=mode)
+        pil_images.append(pil_image)
+    
+    return pil_images
+
+def pil_to_latent(pil_images, N, n_bits, C):
+    tensor_images = [PILToTensor()(img).unsqueeze(0) for img in pil_images]
+    tensor_images = torch.cat(tensor_images, dim=0)
+    split_latent = split_channels(tensor_images, N, C)
+    latent = from_bytes(split_latent, n_bits)
+    return latent
