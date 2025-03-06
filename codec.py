@@ -160,13 +160,13 @@ def latent_to_pil(latent, n_bits, C):
     
     pil_images = []
     for i in range(concatenated_latent.shape[0]):
-        pil_image = PIL.Image.fromarray(concatenated_latent[i].numpy(), mode=mode)
+        pil_image = Image.fromarray(concatenated_latent[i].numpy(), mode=mode)
         pil_images.append(pil_image)
     
     return pil_images
 
 def pil_to_latent(pil_images, N, n_bits, C):
-    tensor_images = [PILToTensor()(img).unsqueeze(0) for img in pil_images]
+    tensor_images = [pil_to_tensor(img).unsqueeze(0) for img in pil_images]
     tensor_images = torch.cat(tensor_images, dim=0)
     split_latent = split_channels(tensor_images, N, C)
     latent = from_bytes(split_latent, n_bits)
